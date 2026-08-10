@@ -1,0 +1,104 @@
+name: Website Monitor
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check website
+        id: check
+        env:
+          WEBSITE_URL: ${{ secrets.WEBSITE_URL }}
+        run: |
+          set +e
+
+          # Follow redirects and fail on HTTP errors.
+          curl \
+            --silent \
+            --show-error \
+            --location \
+            --fail \
+            --max-time 30 \
+            --connect-timeout 10 \
+            "$WEBSITE_URL"
+
+          EXIT_CODE=$?
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "status=up" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=down" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Handle website status
+        env:
+          WEBSITE_STATUS: ${{ steps.check.outputs.status }}
+          WEBSITE_URL: ${{ secrets.WEBSITE_URL }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          if [ -f "./websiteIsDown" ]; then
+            # Website was previously detected as down.
+            if [ "$WEBSITE_STATUS" = "up" ]; then
+              echo "Website is back up."
+
+              rm ./websiteIsDown
+
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+
+              git add ./websiteIsDown
+              git commit -m "chore: website is back up"
+              git push
+
+              curl \
+                --fail \
+                --silent \
+                --show-error \
+                -X POST \
+                -H "Authorization: Bearer $NTFY_TOKEN" \
+                -d "Website is back up: $WEBSITE_URL" \
+                "$NTFY_URL"
+            else
+              echo "Website is still down. No notification."
+            fi
+
+          else
+            # Website was not previously detected as down.
+            if [ "$WEBSITE_STATUS" = "down" ]; then
+              echo "Website is down."
+
+              touch ./websiteIsDown
+
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+
+              git add ./websiteIsDown
+              git commit -m "chore: website is down"
+              git push
+
+              curl \
+                --fail \
+                --silent \
+                --show-error \
+                -X POST \
+                -H "Authorization: Bearer $NTFY_TOKEN" \
+                -d "Website is down: $WEBSITE_URL" \
+                "$NTFY_URL"
+            else
+              echo "Website is up. Nothing to do."
+            fi
+          fi
