@@ -23,20 +23,28 @@ jobs:
         env:
           WEBSITE_URL: ${{ secrets.WEBSITE_URL }}
         run: |
+          if [ -z "${WEBSITE_URL}" ]; then
+            echo "ERROR: WEBSITE_URL is empty."
+            exit 1
+          fi
+
+          echo "Checking website..."
+
           if curl \
+            --fail \
             --silent \
             --show-error \
             --location \
-            --fail \
             --max-time 30 \
             --connect-timeout 10 \
-            "$WEBSITE_URL"
+            --request GET \
+            "${WEBSITE_URL}"
           then
             echo "Website is UP"
-            echo "status=up" >> "$GITHUB_OUTPUT"
+            echo "status=up" >> "${GITHUB_OUTPUT}"
           else
             echo "Website is DOWN"
-            echo "status=down" >> "$GITHUB_OUTPUT"
+            echo "status=down" >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Handle website status
@@ -51,8 +59,7 @@ jobs:
 
           if [ -f "./websiteIsDown" ]; then
 
-            # Website was previously down
-            if [ "$WEBSITE_STATUS" = "up" ]; then
+            if [ "${WEBSITE_STATUS}" = "up" ]; then
               echo "Website is back up."
 
               rm ./websiteIsDown
@@ -68,9 +75,9 @@ jobs:
                 --silent \
                 --show-error \
                 --request POST \
-                --header "Authorization: Bearer $NTFY_TOKEN" \
-                --data "Website is back up: $WEBSITE_URL" \
-                "$NTFY_URL"
+                --header "Authorization: Bearer ${NTFY_TOKEN}" \
+                --data "Website is back up: ${WEBSITE_URL}" \
+                "${NTFY_URL}"
 
             else
               echo "Website is still down. No notification."
@@ -78,8 +85,7 @@ jobs:
 
           else
 
-            # Website was previously up
-            if [ "$WEBSITE_STATUS" = "down" ]; then
+            if [ "${WEBSITE_STATUS}" = "down" ]; then
               echo "Website is down."
 
               touch ./websiteIsDown
@@ -95,9 +101,9 @@ jobs:
                 --silent \
                 --show-error \
                 --request POST \
-                --header "Authorization: Bearer $NTFY_TOKEN" \
-                --data "Website is down: $WEBSITE_URL" \
-                "$NTFY_URL"
+                --header "Authorization: Bearer ${NTFY_TOKEN}" \
+                --data "Website is down: ${WEBSITE_URL}" \
+                "${NTFY_URL}"
 
             else
               echo "Website is up. Nothing to do."
